@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>家族详情 · 乡村迁徙记忆站</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="wrap" id="main"><p class="meta">正在载入……</p></div>
+<script src="/js/common.js"></script>
+<script>
+renderShell('');
+(async () => {
+  const id = qs('id');
+  try {
+    const f = await api('/api/families/' + id);
+    document.title = f.name + ' · 乡村迁徙记忆站';
+    $('#main').innerHTML = `
+      <p><a href="/">← 返回首页</a> · <a href="/map.html">在地图上看迁徙路线</a></p>
+      <div class="card" style="margin-top:.6rem">
+        <div class="family-head">
+          <div class="grow">
+            <h2 style="color:var(--brand-dark)">${esc(f.name)}</h2>
+            <p class="meta">祖籍：${esc(f.origin_village || '待考')}</p>
+            <p style="margin-top:.4rem">${esc(f.summary || '')}</p>
+            ${f.private_count ? `<p style="margin-top:.5rem"><span class="tag private">🔒 本家族有 ${f.private_count} 则私密故事，需访问口令</span></p>` : ''}
+          </div>
+        </div>
+      </div>
+
+      <h3 style="color:var(--brand-dark);margin:1.2rem 0 .5rem">🧭 迁徙路线</h3>
+      ${f.routes.length ? f.routes.map(r => `
+        <div class="card">
+          <div class="route-flow">
+            <span class="tag era">${r.year || '年代待考'}</span>
+            <span class="place">${esc(r.from_place)}</span>
+            <span class="arrow">→</span>
+            <span class="place">${esc(r.to_place)}</span>
+          </div>
+          ${r.reason ? `<p><b>迁徙缘由：</b>${esc(r.reason)}</p>` : ''}
+          ${r.transport ? `<p><b>交通方式：</b>${esc(r.transport)}</p>` : ''}
+          ${r.description ? `<p>${esc(r.description)}</p>` : ''}
+        </div>`).join('') : '<p class="meta">暂无路线记录。</p>'}
+
+      <h3 style="color:var(--brand-dark);margin:1.2rem 0 .5rem">📖 人物故事</h3>
+      ${f.stories.length ? f.stories.map(s => `
+        <div class="card">
+          <h3>
+            ${s.is_private ? '<span class="tag private">🔒 私密</span> ' : ''}
+            <a href="/story.html?id=${s.id}" style="color:inherit">${esc(s.title)}</a>
+          </h3>
+          <p class="meta">
+            ${s.person_name ? '人物：' + esc(s.person_name) + ' · ' : ''}
+            ${s.era ? esc(s.era) + ' · ' : ''}${s.event_year || ''} ${s.event_year ? '年' : ''}
+            ${s.contributor ? ' · 资料提供：' + esc(s.contributor) : ''}
+          </p>
+          <p>${esc(s.excerpt)}${s.locked ? '' : '……'}</p>
+          <p style="margin-top:.3rem"><a class="btn ghost" style="padding:.3rem 1rem" href="/story.html?id=${s.id}">${s.locked ? '输入口令阅读' : '阅读全文'} →</a></p>
+        </div>`).join('') : '<p class="meta">暂无故事。</p>'}
+
+      <h3 style="color:var(--brand-dark);margin:1.2rem 0 .5rem">🏠 老宅照片</h3>
+      ${f.photos.length ? `<div class="photo-grid">${f.photos.map(p => `
+        <div class="photo-card">
+          <img src="${p.url}" alt="${esc(p.caption || '老宅照片')}" loading="lazy"
+               onclick="showPhoto('${p.url}', '${esc(p.caption || '').replace(/'/g, '')}')">
+          <div class="cap"><b>${esc(p.year_taken || '年代不详')}</b><br>${esc(p.caption || '')}</div>
+        </div>`).join('')}</div>` : '<p class="meta">暂无照片。</p>'}
+
+      <div class="notice info" style="margin-top:1.4rem">
+        您是 ${esc(f.name)} 的亲属吗？欢迎 <a href="/submit.html?family_id=${f.id}"><b>补充故事、老照片或纠正错漏</b></a>，管理员审核后即会收录。
+      </div>`;
+  } catch (e) {
+    $('#main').innerHTML = `<div class="notice err">${esc(e.message)}</div><p><a href="/">← 返回首页</a></p>`;
+  }
+})();
+</script>
+</body>
+</html>

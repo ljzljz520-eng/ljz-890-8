@@ -1,0 +1,20 @@
+{
+  "name": "rural-migration-memory-station",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "seed": "node seed.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "乡村迁徙记忆站 — 记录家族迁徙路线、人物故事、老宅照片与年代说明",
+  "dependencies": {
+    "express": "^5.2.1",
+    "express-session": "^1.19.0",
+    "leaflet": "^1.9.4",
+    "multer": "^2.3.0",
+    "sql.js": "^1.14.2"
+  }
+}

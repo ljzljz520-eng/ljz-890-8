@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>补充家族资料 · 乡村迁徙记忆站</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="wrap narrow">
+  <h2 style="color:var(--brand-dark)">✍️ 补充家族资料</h2>
+  <p class="meta">您是家族亲属吗？欢迎补充人物故事、老宅照片，或纠正站内错漏。提交后由管理员审核，审核通过即会收录进站。</p>
+
+  <div class="card" style="margin-top:1rem">
+    <form id="form" enctype="multipart/form-data">
+      <label for="family_id">所属家族 *</label>
+      <select id="family_id" name="family_id" required></select>
+
+      <label>资料类型 *</label>
+      <div style="display:flex;gap:1.2rem;flex-wrap:wrap;font-size:1.05rem">
+        <label style="margin:0;font-weight:400"><input type="radio" name="type" value="story" checked style="width:20px;height:20px;vertical-align:-3px"> 人物故事 / 回忆</label>
+        <label style="margin:0;font-weight:400"><input type="radio" name="type" value="photo" style="width:20px;height:20px;vertical-align:-3px"> 老照片</label>
+        <label style="margin:0;font-weight:400"><input type="radio" name="type" value="correction" style="width:20px;height:20px;vertical-align:-3px"> 纠错 / 补充说明</label>
+      </div>
+
+      <div class="form-row">
+        <div><label for="person_name">相关人物</label>
+          <input type="text" id="person_name" name="person_name" placeholder="如：祖父 陈德海"></div>
+        <div><label for="title">标题</label>
+          <input type="text" id="title" name="title" placeholder="给这段资料起个标题"></div>
+      </div>
+
+      <div id="content-box">
+        <label for="content">内容 *</label>
+        <textarea id="content" name="content" placeholder="请尽量写清时间、地点、人物和经过；记不清的地方注明'约'或'待考'即可。"></textarea>
+      </div>
+
+      <div id="photo-box" style="display:none">
+        <label for="photo">选择照片 *</label>
+        <input type="file" id="photo" name="photo" accept="image/*">
+        <p class="help">支持 JPG、PNG 等常见格式，单张不超过 8MB。老照片翻拍或扫描件均可。</p>
+        <label for="photo_caption">照片说明</label>
+        <input type="text" id="photo_caption" name="photo_caption" placeholder="如：1950年代老宅正房，门前为祖父">
+      </div>
+
+      <div class="form-row">
+        <div><label for="submitter_name">您的称呼 *</label>
+          <input type="text" id="submitter_name" name="submitter_name" placeholder="如：陈小军（陈德海之孙）" required></div>
+        <div><label for="contact">联系方式（选填）</label>
+          <input type="text" id="contact" name="contact" placeholder="电话或微信，仅管理员可见"></div>
+      </div>
+
+      <div id="msg"></div>
+      <p style="margin-top:1rem"><button class="btn big" type="submit">提交资料</button></p>
+    </form>
+  </div>
+</div>
+<script src="/js/common.js"></script>
+<script>
+renderShell('submit');
+(async () => {
+  const families = await api('/api/families');
+  const sel = $('#family_id');
+  sel.innerHTML = families.map(f => `<option value="${f.id}">${esc(f.name)}（${esc(f.origin_village || '')}）</option>`).join('');
+  const pre = qs('family_id');
+  if (pre) sel.value = pre;
+
+  $$('input[name=type]').forEach(r => r.onchange = () => {
+    const t = document.querySelector('input[name=type]:checked').value;
+    $('#photo-box').style.display = t === 'photo' ? '' : 'none';
+    $('#content-box').style.display = t === 'photo' ? 'none' : '';
+  });
+
+  $('#form').onsubmit = async (e) => {
+    e.preventDefault();
+    const fd = new FormData($('#form'));
+    const btn = $('#form button[type=submit]');
+    btn.disabled = true; btn.textContent = '正在提交……';
+    try {
+      const res = await fetch('/api/submissions', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '提交失败');
+      $('#msg').innerHTML = `<div class="notice ok">${esc(data.message)}</div>`;
+      $('#form').reset();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err) {
+      $('#msg').innerHTML = `<div class="notice err">${esc(err.message)}</div>`;
+    } finally {
+      btn.disabled = false; btn.textContent = '提交资料';
+    }
+  };
+})();
+</script>
+</body>
+</html>

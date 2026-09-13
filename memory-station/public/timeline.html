@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>岁月时间线 · 乡村迁徙记忆站</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="wrap">
+  <h2 style="color:var(--brand-dark)">📜 岁月时间线</h2>
+  <p class="meta">顺着年代往下看：金色是时代背景，红色是家族迁徙，绿色是人物故事。</p>
+  <div id="filter" style="margin:.6rem 0"></div>
+  <div class="timeline" id="timeline"><p class="meta">正在载入……</p></div>
+</div>
+<script src="/js/common.js"></script>
+<script>
+renderShell('timeline');
+let DATA = null, FAM = null;
+
+function eraFor(year, eras) {
+  return eras.find(e => year >= e.year_start && year <= (e.year_end || e.year_start));
+}
+
+function render() {
+  const { routes, stories, eras } = DATA;
+  const items = [];
+  routes.forEach(r => { if (!FAM || r.family_id === FAM) items.push({ kind: 'route', year: r.year, data: r }); });
+  stories.forEach(s => { if (!FAM || s.family_id === FAM) items.push({ kind: 'story', year: s.event_year, data: s }); });
+  items.sort((a, b) => a.year - b.year);
+
+  let html = '', lastEra = null;
+  for (const it of items) {
+    const era = eraFor(it.year, eras);
+    if (era && era !== lastEra) {
+      lastEra = era;
+      html += `<div class="tl-item tl-era">
+        <div class="tl-year">${era.year_start}—${era.year_end || era.year_start} 年</div>
+        <div class="tl-card era-card"><b>【时代背景】${esc(era.title)}</b><br>${esc(era.description || '')}</div>
+      </div>`;
+    }
+    if (it.kind === 'route') {
+      const r = it.data;
+      html += `<div class="tl-item">
+        <div class="tl-year">${r.year} 年</div>
+        <div class="tl-card">
+          <span class="tag">迁徙</span> <b>${esc(r.family_name)}</b>：
+          ${esc(r.from_place)} → ${esc(r.to_place)}
+          ${r.reason ? `<br><span class="meta">缘由：${esc(r.reason)}</span>` : ''}
+          <br><a href="/family.html?id=${r.family_id}">查看家族 →</a>
+        </div>
+      </div>`;
+    } else {
+      const s = it.data;
+      html += `<div class="tl-item tl-story">
+        <div class="tl-year">${s.event_year} 年</div>
+        <div class="tl-card">
+          <span class="tag era">故事</span> ${s.era ? `<span class="tag">${esc(s.era)}</span>` : ''}
+          <a href="/story.html?id=${s.id}"><b>${esc(s.title)}</b></a>
+          <span class="meta">（${esc(s.family_name)}${s.person_name ? ' · ' + esc(s.person_name) : ''}）</span>
+          <br>${esc(s.excerpt || '')}……
+        </div>
+      </div>`;
+    }
+  }
+  $('#timeline').innerHTML = html || '<p class="meta">暂无记录。</p>';
+}
+
+(async () => {
+  DATA = await api('/api/timeline');
+  const fams = [...new Map(DATA.routes.map(r => [r.family_id, r.family_name])
+    .concat(DATA.stories.map(s => [s.family_id, s.family_name]))).entries()];
+  $('#filter').innerHTML = `<button class="btn" data-fam="">全部家族</button> ` +
+    fams.map(([id, name]) => `<button class="btn ghost" data-fam="${id}">${esc(name)}</button>`).join(' ');
+  $$('#filter button').forEach(b => b.onclick = () => {
+    FAM = b.dataset.fam ? Number(b.dataset.fam) : null;
+    $$('#filter button').forEach(x => x.className = 'btn ghost');
+    b.className = 'btn';
+    render();
+  });
+  render();
+})();
+</script>
+</body>
+</html>

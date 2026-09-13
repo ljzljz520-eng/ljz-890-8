@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>乡村迁徙记忆站 · 首页</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="hero">
+    <h1>留住来时的路</h1>
+    <p>这里记录着我们家族几代人迁徙的足迹：从哪里出发，走过哪些地方，为何离乡，又在何处扎根。每一条路线、每一个故事、每一张老宅照片，都是留给后人的念想。</p>
+    <div class="hero-stats" id="stats"></div>
+  </div>
+
+  <div class="big-entries">
+    <a class="big-entry" href="/map.html"><span class="ico">🗺️</span><b>按地图浏览</b><small>在地图上看各家的迁徙路线</small></a>
+    <a class="big-entry" href="/timeline.html"><span class="ico">📜</span><b>按时间线浏览</b><small>顺着年代读迁徙的故事</small></a>
+    <a class="big-entry" href="/submit.html"><span class="ico">✍️</span><b>补充家族资料</b><small>亲属可提交故事与老照片</small></a>
+  </div>
+
+  <h2 style="color:var(--brand-dark);margin-bottom:.6rem">家族名录</h2>
+  <div id="families"><p class="meta">正在载入……</p></div>
+</div>
+<script src="/js/common.js"></script>
+<script>
+renderShell('home');
+(async () => {
+  try {
+    const [site, families] = await Promise.all([api('/api/site'), api('/api/families')]);
+    $('#stats').innerHTML = `
+      <div><b>${site.families}</b>个家族</div>
+      <div><b>${site.routes}</b>段迁徙路线</div>
+      <div><b>${site.stories}</b>则人物故事</div>
+      <div><b>${site.photos}</b>张老宅照片</div>`;
+    $('#families').innerHTML = families.map(f => `
+      <div class="card">
+        <h3><a href="/family.html?id=${f.id}" style="color:inherit">${esc(f.name)}</a></h3>
+        <p class="meta">祖籍：${esc(f.origin_village || '待考')}</p>
+        <p>${esc(f.summary || '')}</p>
+        <p style="margin-top:.4rem">
+          <span class="tag">迁徙路线 ${f.route_count} 段</span>
+          <span class="tag">公开故事 ${f.story_count} 则</span>
+          <span class="tag">老宅照片 ${f.photo_count} 张</span>
+          <a class="btn ghost" style="margin-left:.4rem;padding:.3rem 1rem" href="/family.html?id=${f.id}">查看家族 →</a>
+        </p>
+      </div>`).join('') || '<p class="meta">暂无家族记录。</p>';
+  } catch (e) { $('#families').innerHTML = `<div class="notice err">${esc(e.message)}</div>`; }
+})();
+</script>
+</body>
+</html>

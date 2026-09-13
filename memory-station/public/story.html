@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>故事 · 乡村迁徙记忆站</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="wrap narrow" id="main"><p class="meta">正在载入……</p></div>
+<script src="/js/common.js"></script>
+<script>
+renderShell('');
+const id = qs('id');
+
+function renderLocked(s) {
+  $('#main').innerHTML = `
+    <p><a href="/family.html?id=${s.family_id}">← 返回${esc(s.family_name)}</a></p>
+    <div class="card lock-box">
+      <div class="lock-ico">🔒</div>
+      <h2 style="color:var(--brand-dark)">${esc(s.title)}</h2>
+      <p class="meta">${esc(s.family_name)}${s.person_name ? ' · ' + esc(s.person_name) : ''}${s.era ? ' · ' + esc(s.era) : ''}</p>
+      <p style="margin-top:.6rem">${esc(s.hint || '这是私密故事，需要访问口令。')}</p>
+      <form id="unlock-form">
+        <input type="password" id="code" placeholder="请输入访问口令" autocomplete="off" required>
+        <button class="btn" type="submit">确认</button>
+      </form>
+      <p class="help" style="margin-top:.6rem">口令请向家中长辈或站点管理员询问。解锁后，本次浏览期间可直接阅读本家族其他私密内容。</p>
+      <div id="unlock-msg"></div>
+    </div>`;
+  $('#unlock-form').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await post(`/api/stories/${id}/unlock`, { code: $('#code').value });
+      load();
+    } catch (err) {
+      $('#unlock-msg').innerHTML = `<div class="notice err" style="margin-top:.8rem">${esc(err.message)}</div>`;
+    }
+  };
+}
+
+function renderStory(s) {
+  document.title = s.title + ' · 乡村迁徙记忆站';
+  $('#main').innerHTML = `
+    <p><a href="/family.html?id=${s.family_id}">← 返回${esc(s.family_name)}</a> · <a href="/timeline.html">时间线</a></p>
+    <div class="card" style="margin-top:.6rem">
+      <h2 style="color:var(--brand-dark)">${esc(s.title)}</h2>
+      <p class="meta">
+        ${s.person_name ? '人物：' + esc(s.person_name) + ' · ' : ''}
+        ${s.era ? `<span class="tag era">${esc(s.era)}</span> ` : ''}
+        ${s.event_year ? esc(s.event_year) + ' 年 · ' : ''}
+        ${s.contributor ? '资料提供：' + esc(s.contributor) : ''}
+        ${s.is_private ? ' · <span class="tag private">🔒 私密故事（已解锁）</span>' : ''}
+      </p>
+      <hr style="border:none;border-top:1px solid var(--line);margin:.8rem 0">
+      <div class="story-body">${esc(s.content)}</div>
+    </div>
+    ${s.photos && s.photos.length ? `
+      <h3 style="color:var(--brand-dark);margin:1.2rem 0 .5rem">相关照片</h3>
+      <div class="photo-grid">${s.photos.map(p => `
+        <div class="photo-card">
+          <img src="${p.url}" alt="${esc(p.caption || '')}" loading="lazy"
+               onclick="showPhoto('${p.url}', '${esc(p.caption || '').replace(/'/g, '')}')">
+          <div class="cap"><b>${esc(p.year_taken || '')}</b> ${esc(p.caption || '')}</div>
+        </div>`).join('')}</div>` : ''}`;
+}
+
+async function load() {
+  try {
+    const s = await api('/api/stories/' + id);
+    if (s.locked) renderLocked(s); else renderStory(s);
+  } catch (e) {
+    $('#main').innerHTML = `<div class="notice err">${esc(e.message)}</div><p><a href="/">← 返回首页</a></p>`;
+  }
+}
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>迁徙地图 · 乡村迁徙记忆站</title>
+<link rel="stylesheet" href="/lib/leaflet/leaflet.css">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="wrap">
+  <h2 style="color:var(--brand-dark)">🗺️ 迁徙地图</h2>
+  <p class="meta">地图上每一条虚线，都是一家人走过的路。点击路线或标记可查看详情；点击家族名可单独查看。</p>
+  <div id="family-filter" style="margin:.6rem 0"></div>
+  <div class="map-legend">
+    <span class="legend-item"><span class="legend-line"></span>迁徙路线（箭头指向迁居方向）</span>
+    <span class="legend-item"><span class="legend-dot"></span>迁居落脚的村镇城市</span>
+  </div>
+  <div id="map"></div>
+  <div id="route-list" style="margin-top:1.2rem"></div>
+</div>
+<script src="/lib/leaflet/leaflet.js"></script>
+<script src="/js/common.js"></script>
+<script>
+renderShell('map');
+
+const COLORS = ['#8c4a2f', '#2f6b4f', '#3d5a99', '#8a6d1f', '#7a3d6e', '#9c5a1a'];
+let map, routes = [], layers = {}, visibleFamily = null;
+
+function colorOf(familyId, idx) { return COLORS[(idx ?? familyId) % COLORS.length]; }
+
+function arrowHead(from, to, color) {
+  // 在路线末端画一个箭头（小三角）
+  const latlngs = [from, to];
+  const dx = to[1] - from[1], dy = to[0] - from[0];
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  const size = Math.min(len * 0.12, 0.9);
+  const tip = [to[0], to[1]];
+  const left = [to[0] - uy * size - ux * size * 0.8, to[1] + ux * size - uy * size * 0.8];
+  const right = [to[0] + uy * size - ux * size * 0.8, to[1] - ux * size - uy * size * 0.8];
+  return L.polygon([tip, left, right], { color, fillColor: color, fillOpacity: .9, weight: 1 });
+}
+
+function popupHtml(r) {
+  return `<div class="map-popup">
+    <h4>${esc(r.family_name)}</h4>
+    <p><b>${esc(r.from_place)}</b> → <b>${esc(r.to_place)}</b></p>
+    <p>${r.year ? esc(r.year) + ' 年 · ' : ''}${esc(r.reason || '')}</p>
+    ${r.transport ? `<p>交通方式：${esc(r.transport)}</p>` : ''}
+    ${r.description ? `<p>${esc(r.description)}</p>` : ''}
+    <p><a href="/family.html?id=${r.family_id}">查看 ${esc(r.family_name)} 详情 →</a></p>
+  </div>`;
+}
+
+function draw() {
+  Object.values(layers).forEach(g => g.clearLayers());
+  const bounds = [];
+  routes.forEach((r, i) => {
+    if (visibleFamily && r.family_id !== visibleFamily) return;
+    if (r.from_lat == null || r.to_lat == null) return;
+    const color = colorOf(r.family_id, i);
+    const from = [r.from_lat, r.from_lng], to = [r.to_lat, r.to_lng];
+    const g = layers[r.family_id] || (layers[r.family_id] = L.layerGroup().addTo(map));
+    const line = L.polyline([from, to], { color, weight: 4, dashArray: '10 8', opacity: .85 })
+      .bindPopup(popupHtml(r));
+    const arrow = arrowHead(from, to, color).bindPopup(popupHtml(r));
+    const mkFrom = L.circleMarker(from, { radius: 7, color: '#fff', weight: 2, fillColor: color, fillOpacity: 1 })
+      .bindPopup(popupHtml(r));
+    const mkTo = L.circleMarker(to, { radius: 7, color: '#fff', weight: 2, fillColor: color, fillOpacity: 1 })
+      .bindPopup(popupHtml(r));
+    g.addLayer(line); g.addLayer(arrow); g.addLayer(mkFrom); g.addLayer(mkTo);
+    bounds.push(from, to);
+  });
+  if (bounds.length) map.fitBounds(bounds, { padding: [40, 40] });
+}
+
+(async () => {
+  renderShell && null;
+  map = L.map('map', { center: [35.5, 112], zoom: 5, minZoom: 4 });
+  // 在线瓦片（加载失败时路线与标记仍可正常显示）
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 12, attribution: '© OpenStreetMap 贡献者'
+  }).addTo(map);
+
+  routes = await api('/api/routes');
+  draw();
+
+  // 家族筛选
+  const fams = [...new Map(routes.map(r => [r.family_id, r.family_name])).entries()];
+  $('#family-filter').innerHTML =
+    `<button class="btn ${visibleFamily ? 'gray' : ''}" data-fam="">全部家族</button> ` +
+    fams.map(([id, name]) => `<button class="btn ghost" data-fam="${id}">${esc(name)}</button>`).join(' ');
+  $$('#family-filter button').forEach(b => b.onclick = () => {
+    visibleFamily = b.dataset.fam ? Number(b.dataset.fam) : null;
+    $$('#family-filter button').forEach(x => { x.className = 'btn ghost'; });
+    b.className = 'btn';
+    draw();
+  });
+
+  // 路线列表（文字版，方便不习惯看地图的长辈）
+  const byFam = {};
+  routes.forEach(r => (byFam[r.family_name] = byFam[r.family_name] || []).push(r));
+  $('#route-list').innerHTML = '<h3 style="color:var(--brand-dark)">路线一览（文字版）</h3>' +
+    Object.entries(byFam).map(([name, rs]) => `
+      <div class="card"><h3>${esc(name)}</h3>
+        ${rs.map(r => `<div class="route-flow">
+          <span class="tag era">${r.year || '年代待考'}</span>
+          <span class="place">${esc(r.from_place)}</span><span class="arrow">→</span>
+          <span class="place">${esc(r.to_place)}</span>
+          <span class="meta">${esc(r.reason || '')}</span>
+        </div>`).join('')}
+      </div>`).join('');
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>管理后台 · 乡村迁徙记忆站</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<!-- 登录视图 -->
+<div id="login-view" class="wrap narrow" style="display:none;max-width:460px;margin-top:8vh">
+  <div class="card">
+    <h2 style="color:var(--brand-dark);text-align:center">🏡 记忆站管理后台</h2>
+    <form id="login-form">
+      <label for="lu">用户名</label>
+      <input type="text" id="lu" autocomplete="username" required>
+      <label for="lp">密码</label>
+      <input type="password" id="lp" autocomplete="current-password" required>
+      <div id="login-msg"></div>
+      <p style="margin-top:1rem;text-align:center"><button class="btn big" type="submit" style="width:100%">登 录</button></p>
+    </form>
+    <p class="help" style="text-align:center">默认账号 admin / admin123，首次登录后请立即修改密码。</p>
+    <p style="text-align:center"><a href="/">← 返回前台首页</a></p>
+  </div>
+</div>
+
+<!-- 主界面 -->
+<div id="app" class="admin-shell" style="display:none">
+  <aside class="admin-side">
+    <h2>🏡 记忆站管理</h2>
+    <a href="#dashboard" data-view="dashboard">📊 总览</a>
+    <a href="#families" data-view="families">👪 家庭管理</a>
+    <a href="#routes" data-view="routes">🧭 迁徙路线</a>
+    <a href="#stories" data-view="stories">📖 人物故事</a>
+    <a href="#photos" data-view="photos">🏠 老宅照片</a>
+    <a href="#eras" data-view="eras">⏳ 年代说明</a>
+    <a href="#submissions" data-view="submissions">📥 亲属提交 <span class="badge" id="pending-badge" style="display:none"></span></a>
+    <a href="#password" data-view="password">🔑 修改密码</a>
+    <a href="/" target="_blank">🌐 查看前台</a>
+    <a href="#" id="logout">🚪 退出登录</a>
+  </aside>
+  <main class="admin-main" id="view"></main>
+</div>
+
+<script src="/js/common.js"></script>
+<script>
+// ============ 登录状态 ============
+async function checkLogin() {
+  try {
+    const me = await api('/api/admin/me');
+    $('#login-view').style.display = 'none';
+    $('#app').style.display = 'flex';
+    if (me.pending > 0) {
+      $('#pending-badge').style.display = '';
+      $('#pending-badge').textContent = me.pending;
+    }
+    route();
+  } catch (e) {
+    $('#login-view').style.display = '';
+    $('#app').style.display = 'none';
+  }
+}
+$('#login-form').onsubmit = async (e) => {
+  e.preventDefault();
+  try {
+    await post('/api/admin/login', { username: $('#lu').value, password: $('#lp').value });
+    checkLogin();
+  } catch (err) { $('#login-msg').innerHTML = `<div class="notice err">${esc(err.message)}</div>`; }
+};
+$('#logout').onclick = async (e) => { e.preventDefault(); await post('/api/admin/logout'); location.reload(); };
+
+// ============ 路由 ============
+// 安全地把对象嵌入内联事件属性
+const J = (o) => JSON.stringify(o).replace(/&/g, '&amp;').replace(/'/g, '&#39;');
+const views = {};
+function route() {
+  const hash = (location.hash || '#dashboard').slice(1);
+  $$('.admin-side a[data-view]').forEach(a => a.classList.toggle('active', a.dataset.view === hash));
+  (views[hash] || views.dashboard)();
+}
+window.addEventListener('hashchange', route);
+
+// ============ 通用 ============
+function opt(list, valKey, labelFn, selected) {
+  return list.map(x => `<option value="${x[valKey]}" ${String(x[valKey]) === String(selected) ? 'selected' : ''}>${esc(labelFn(x))}</option>`).join('');
+}
+let FAMILIES = [];
+async function loadFamilies() { FAMILIES = await api('/api/admin/families'); return FAMILIES; }
+function famName(id) { const f = FAMILIES.find(x => x.id === id); return f ? f.name : '—'; }
+
+// ============ 总览 ============
+views.dashboard = async () => {
+  const [site, subs] = await Promise.all([api('/api/site'), api('/api/admin/submissions')]);
+  const pending = subs.filter(s => s.status === 'pending');
+  $('#view').innerHTML = `
+    <h2 style="color:var(--brand-dark)">📊 站点总览</h2>
+    <div class="big-entries" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+      <div class="big-entry"><b>${site.families}</b><small>家庭</small></div>
+      <div class="big-entry"><b>${site.routes}</b><small>迁徙路线</small></div>
+      <div class="big-entry"><b>${site.stories}</b><small>人物故事</small></div>
+      <div class="big-entry"><b>${site.photos}</b><small>老宅照片</small></div>
+      <div class="big-entry" style="${pending.length ? 'border-color:var(--danger)' : ''}">
+        <b style="color:${pending.length ? 'var(--danger)' : 'inherit'}">${pending.length}</b><small>待审核提交</small></div>
+    </div>
+    ${pending.length ? `<div class="notice info">有 ${pending.length} 条亲属提交待审核，<a href="#submissions"><b>前往处理 →</b></a></div>` : ''}
+    <div class="panel"><h3>使用提示</h3>
+      <p>① 先在「家庭管理」建立家族档案 → ② 在「迁徙路线」录入各段迁徙（可在地图拾取坐标）→ ③ 在「人物故事」记录故事，私密故事请设置访问口令 → ④ 在「老宅照片」上传照片 → ⑤ 在「年代说明」维护时代背景，时间线会自动引用。</p>
+      <p style="margin-top:.4rem">亲属通过前台「补充资料」提交的内容会出现在「亲属提交」中，审核通过后自动收录。</p>
+    </div>`;
+};
+
+// ============ 家庭管理 ============
+views.families = async () => {
+  await loadFamilies();
+  $('#view').innerHTML = `
+    <h2 style="color:var(--brand-dark)">👪 家庭管理</h2>
+    <div class="inline-form" id="fam-form">
+      <h3 style="color:var(--brand-dark)">新增家庭</h3>
+      <input type="hidden" id="f-id">
+      <div class="form-row">
+        <div><label>家庭名称 *</label><input id="f-name" placeholder="如：陈氏家族"></div>
+        <div><label>姓氏</label><input id="f-surname" placeholder="如：陈"></div>
+      </div>
+      <label>祖籍村庄</label><input id="f-origin" placeholder="如：山东省登州府蓬莱县陈家疃">
+      <label>家族简介</label><textarea id="f-summary" style="min-height:5em"></textarea>
+      <p style="margin-top:.6rem"><button class="btn" id="f-save">保存</button>
+      <button class="btn gray" id="f-cancel" style="display:none">取消编辑</button></p>
+    </div>
+    <table class="admin-table"><thead><tr><th>ID</th><th>名称</th><th>祖籍</th><th>简介</th><th>操作</th></tr></thead>
+    <tbody>${FAMILIES.map(f => `<tr>
+      <td>${f.id}</td><td><b>${esc(f.name)}</b></td><td>${esc(f.origin_village || '')}</td>
+      <td>${esc((f.summary || '').slice(0, 60))}…</td>
+      <td class="ops"><button class="btn ghost" style="padding:.15rem .6rem" onclick="editFam(${f.id})">编辑</button>
+      <button class="btn gray" style="padding:.15rem .6rem" onclick="delFam(${f.id},'${esc(f.name)}')">删除</button></td>
+    </tr>`).join('')}</tbody></table>`;
+  $('#f-save').onclick = saveFam;
+  $('#f-cancel').onclick = () => views.families();
+};
+window.editFam = (id) => {
+  const f = FAMILIES.find(x => x.id === id);
+  $('#f-id').value = f.id; $('#f-name').value = f.name; $('#f-surname').value = f.surname || '';
+  $('#f-origin').value = f.origin_village || ''; $('#f-summary').value = f.summary || '';
+  $('#f-cancel').style.display = ''; $('#fam-form h3').textContent = '编辑家庭 #' + id;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+window.delFam = async (id, name) => {
+  if (!confirm(`确定删除「${name}」？其下路线、故事、照片将一并删除！`)) return;
+  await api('/api/admin/families/' + id, { method: 'DELETE' });
+  toast('已删除'); views.families();
+};
+async function saveFam() {
+  const id = $('#f-id').value;
+  const body = { name: $('#f-name').value, surname: $('#f-surname').value, origin_village: $('#f-origin').value, summary: $('#f-summary').value };
+  if (!body.name.trim()) return toast('请填写家庭名称', false);
+  if (id) await api('/api/admin/families/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  else await post('/api/admin/families', body);
+  toast('已保存'); views.families();
+}
+
+// ============ 迁徙路线 ============
+views.routes = async () => {
+  await loadFamilies();
+  const routes = await api('/api/admin/routes');
+  $('#view').innerHTML = `
+    <h2 style="color:var(--brand-dark)">🧭 迁徙路线管理</h2>
+    <div class="inline-form">
+      <h3 style="color:var(--brand-dark)" id="r-form-title">新增路线</h3>
+      <input type="hidden" id="r-id">
+      <div class="form-row">
+        <div><label>所属家庭 *</label><select id="r-family">${opt(FAMILIES, 'id', f => f.name)}</select></div>
+        <div><label>迁徙年份</label><input type="number" id="r-year" placeholder="如 1927"></div>
+      </div>
+      <div class="form-row">
+        <div><label>出发地 *</label><input id="r-from" placeholder="如：山东蓬莱陈家疃"></div>
+        <div><label>目的地 *</label><input id="r-to" placeholder="如：辽宁大连"></div>
+      </div>
+      <div class="form-row">
+        <div><label>出发地纬度</label><input type="number" step="any" id="r-fromlat" placeholder="如 37.81"></div>
+        <div><label>出发地经度</label><input type="number" step="any" id="r-fromlng" placeholder="如 120.76"></div>
+      </div>
+      <div class="form-row">
+        <div><label>目的地纬度</label><input type="number" step="any" id="r-tolat" placeholder="如 38.91"></div>
+        <div><label>目的地经度</label><input type="number" step="any" id="r-tolng" placeholder="如 121.61"></div>
+      </div>
+      <p class="help">💡 坐标查询：可在 <a href="https://www.openstreetmap.org" target="_blank">OpenStreetMap</a> 找到地点后，从网址或右键菜单读取经纬度。不填坐标则不在地图显示。</p>
+      <div class="form-row">
+        <div><label>迁徙原因</label><input id="r-reason" placeholder="如：家乡连年旱灾，渡海谋生"></div>
+        <div><label>交通方式</label><input id="r-transport" placeholder="如：木帆船 / 火车 / 步行"></div>
+      </div>
+      <label>路线说明</label><textarea id="r-desc" style="min-height:4em"></textarea>
+      <label>排序号（同家庭内路线顺序，小的在前）</label><input type="number" id="r-sort" value="0" style="max-width:120px">
+      <p style="margin-top:.6rem"><button class="btn" id="r-save">保存</button>
+      <button class="btn gray" id="r-cancel" style="display:none">取消编辑</button></p>
+    </div>
+    <table class="admin-table"><thead><tr><th>家庭</th><th>年份</th><th>路线</th><th>原因</th><th>坐标</th><th>操作</th></tr></thead>
+    <tbody>${routes.map(r => `<tr>
+      <td>${esc(r.family_name)}</td><td>${r.year || '—'}</td>
+      <td>${esc(r.from_place)} → ${esc(r.to_place)}</td><td>${esc(r.reason || '')}</td>
+      <td>${r.from_lat != null ? '✓' : '—'}</td>
+      <td class="ops"><button class="btn ghost" style="padding:.15rem .6rem" onclick='editRoute(${J(r)})'>编辑</button>
+      <button class="btn gray" style="padding:.15rem .6rem" onclick="delRoute(${r.id})">删除</button></td>
+    </tr>`).join('')}</tbody></table>`;
+  $('#r-save').onclick = saveRoute;
+  $('#r-cancel').onclick = () => views.routes();
+};
+window.editRoute = (r) => {
+  $('#r-id').value = r.id; $('#r-family').value = r.family_id; $('#r-year').value = r.year || '';
+  $('#r-from').value = r.from_place; $('#r-to').value = r.to_place;
+  $('#r-fromlat').value = r.from_lat ?? ''; $('#r-fromlng').value = r.from_lng ?? '';
+  $('#r-tolat').value = r.to_lat ?? ''; $('#r-tolng').value = r.to_lng ?? '';
+  $('#r-reason').value = r.reason || ''; $('#r-transport').value = r.transport || '';
+  $('#r-desc').value = r.description || ''; $('#r-sort').value = r.sort || 0;
+  $('#r-cancel').style.display = ''; $('#r-form-title').textContent = '编辑路线 #' + r.id;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+window.delRoute = async (id) => {
+  if (!confirm('确定删除该路线？')) return;
+  await api('/api/admin/routes/' + id, { method: 'DELETE' });
+  toast('已删除'); views.routes();
+};
+async function saveRoute() {
+  const id = $('#r-id').value;
+  const num = s => $(s).value === '' ? null : Number($(s).value);
+  const body = {
+    family_id: Number($('#r-family').value), year: num('#r-year'),
+    from_place: $('#r-from').value, to_place: $('#r-to').value,
+    from_lat: num('#r-fromlat'), from_lng: num('#r-fromlng'),
+    to_lat: num('#r-tolat'), to_lng: num('#r-tolng'),
+    reason: $('#r-reason').value, transport: $('#r-transport').value,
+    description: $('#r-desc').value, sort: Number($('#r-sort').value) || 0
+  };
+  if (!body.from_place.trim() || !body.to_place.trim()) return toast('请填写出发地和目的地', false);
+  if (id) await api('/api/admin/routes/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  else await post('/api/admin/routes', body);
+  toast('已保存'); views.routes();
+}
+
+// ============ 人物故事 ============
+views.stories = async () => {
+  await loadFamilies();
+  const stories = await api('/api/admin/stories');
+  $('#view').innerHTML = `
+    <h2 style="color:var(--brand-dark)">📖 人物故事管理</h2>
+    <div class="inline-form">
+      <h3 style="color:var(--brand-dark)" id="s-form-title">新增故事</h3>
+      <input type="hidden" id="s-id">
+      <div class="form-row">
+        <div><label>所属家庭 *</label><select id="s-family">${opt(FAMILIES, 'id', f => f.name)}</select></div>
+        <div><label>人物</label><input id="s-person" placeholder="如：曾祖父 陈守业"></div>
+      </div>
+      <label>标题 *</label><input id="s-title" placeholder="如：一副担子过渤海">
+      <label>故事内容 *</label><textarea id="s-content" style="min-height:10em" placeholder="分段落记录，尽量保留口述原味"></textarea>
+      <div class="form-row">
+        <div><label>年代标签</label><input id="s-era" placeholder="如：民国年间"></div>
+        <div><label>发生年份（时间线用）</label><input type="number" id="s-year" placeholder="如 1927"></div>
+      </div>
+      <div class="form-row">
+        <div><label>资料提供者</label><input id="s-contributor" placeholder="如：陈建国（长孙）整理"></div>
+        <div><label>状态</label><select id="s-status"><option value="published">公开上架</option><option value="draft">草稿（暂不上架）</option></select></div>
+      </div>
+      <div class="checkline"><input type="checkbox" id="s-private"><label for="s-private">🔒 设为私密故事（需访问口令才能阅读）</label></div>
+      <div id="s-code-box" style="display:none">
+        <label>访问口令</label><input id="s-code" placeholder="如：堂号、祖宅门牌、家族纪念日等，告知亲属即可">
+        <p class="help">口令请设置得让家人容易记住、外人难以猜到。留空则任何人无法解锁（仅管理员可见）。</p>
+      </div>
+      <p style="margin-top:.6rem"><button class="btn" id="s-save">保存</button>
+      <button class="btn gray" id="s-cancel" style="display:none">取消编辑</button></p>
+    </div>
+    <table class="admin-table"><thead><tr><th>ID</th><th>标题</th><th>家庭</th><th>人物</th><th>年份</th><th>权限</th><th>状态</th><th>操作</th></tr></thead>
+    <tbody>${stories.map(s => `<tr>
+      <td>${s.id}</td><td><b>${esc(s.title)}</b></td><td>${esc(s.family_name)}</td>
+      <td>${esc(s.person_name || '')}</td><td>${s.event_year || '—'}</td>
+      <td>${s.is_private ? '🔒 私密' : '公开'}</td><td>${s.status === 'published' ? '上架' : '草稿'}</td>
+      <td class="ops"><button class="btn ghost" style="padding:.15rem .6rem" onclick='editStory(${J(s)})'>编辑</button>
+      <button class="btn gray" style="padding:.15rem .6rem" onclick="delStory(${s.id})">删除</button></td>
+    </tr>`).join('')}</tbody></table>`;
+  $('#s-private').onchange = () => $('#s-code-box').style.display = $('#s-private').checked ? '' : 'none';
+  $('#s-save').onclick = saveStory;
+  $('#s-cancel').onclick = () => views.stories();
+};
+window.editStory = (s) => {
+  $('#s-id').value = s.id; $('#s-family').value = s.family_id; $('#s-person').value = s.person_name || '';
+  $('#s-title').value = s.title; $('#s-content').value = s.content; $('#s-era').value = s.era || '';
+  $('#s-year').value = s.event_year || ''; $('#s-contributor').value = s.contributor || '';
+  $('#s-status').value = s.status; $('#s-private').checked = !!s.is_private;
+  $('#s-code').value = s.access_code || '';
+  $('#s-code-box').style.display = s.is_private ? '' : 'none';
+  $('#s-cancel').style.display = ''; $('#s-form-title').textContent = '编辑故事 #' + s.id;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+window.delStory = async (id) => {
+  if (!confirm('确定删除该故事？')) return;
+  await api('/api/admin/stories/' + id, { method: 'DELETE' });
+  toast('已删除'); views.stories();
+};
+async function saveStory() {
+  const id = $('#s-id').value;
+  const body = {
+    family_id: Number($('#s-family').value), person_name: $('#s-person').value,
+    title: $('#s-title').value, content: $('#s-content').value, era: $('#s-era').value,
+    event_year: $('#s-year').value ? Number($('#s-year').value) : null,
+    contributor: $('#s-contributor').value, status: $('#s-status').value,
+    is_private: $('#s-private').checked, access_code: $('#s-code').value
+  };
+  if (!body.title.trim() || !body.content.trim()) return toast('请填写标题和内容', false);
+  if (body.is_private && !body.access_code.trim() && !confirm('私密故事未设置口令，亲属将无法解锁。确定继续？')) return;
+  if (id) await api('/api/admin/stories/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  else await post('/api/admin/stories', body);
+  toast('已保存'); views.stories();
+}
+
+// ============ 老宅照片 ============
+views.photos = async () => {
+  await loadFamilies();
+  const [photos, stories] = await Promise.all([api('/api/admin/photos'), api('/api/admin/stories')]);
+  $('#view').innerHTML = `
+    <h2 style="color:var(--brand-dark)">🏠 老宅照片管理</h2>
+    <div class="inline-form">
+      <h3 style="color:var(--brand-dark)">上传照片</h3>
+      <form id="p-form">
+      <div class="form-row">
+        <div><label>所属家庭 *</label><select id="p-family">${opt(FAMILIES, 'id', f => f.name)}</select></div>
+        <div><label>关联故事（选填）</label><select id="p-story"><option value="">— 不关联 —</option>${opt(stories, 'id', s => s.title)}</select></div>
+      </div>
+      <label>照片文件 *</label><input type="file" id="p-file" accept="image/*" required>
+      <div class="form-row">
+        <div><label>照片说明</label><input id="p-caption" placeholder="如：1950年代老宅正房"></div>
+        <div><label>拍摄年代</label><input id="p-year" placeholder="如：1950年代"></div>
+      </div>
+      <div class="checkline"><input type="checkbox" id="p-private"><label for="p-private">🔒 设为私密照片（需解锁该家庭私密内容后可见）</label></div>
+      <p style="margin-top:.6rem"><button class="btn" type="submit">上传</button></p>
+      </form>
+    </div>
+    <div class="photo-grid">${photos.map(p => `
+      <div class="photo-card">
+        <img src="/uploads/${p.filename}" alt="" loading="lazy" onclick="showPhoto('/uploads/${p.filename}','${esc(p.caption || '').replace(/'/g, '')}')">
+        <div class="cap">
+          <b>${esc(p.family_name)}</b> · ${esc(p.year_taken || '年代不详')} ${p.is_private ? '· 🔒私密' : ''}<br>
+          ${esc(p.caption || '')}<br>
+          <span class="ops" style="margin-top:.3rem;display:inline-block">
+            <button class="btn gray" style="padding:.1rem .5rem;font-size:.85rem" onclick="delPhoto(${p.id})">删除</button>
+          </span>
+        </div>
+      </div>`).join('')}</div>`;
+  $('#p-form').onsubmit = async (e) => {
+    e.preventDefault();
+    if (!$('#p-file').files[0]) return toast('请选择照片文件', false);
+    const fd = new FormData();
+    fd.append('photo', $('#p-file').files[0]);
+    fd.append('family_id', $('#p-family').value);
+    fd.append('story_id', $('#p-story').value);
+    fd.append('caption', $('#p-caption').value);
+    fd.append('year_taken', $('#p-year').value);
+    fd.append('is_private', $('#p-private').checked ? '1' : '');
+    const res = await fetch('/api/admin/photos', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) return toast(data.error || '上传失败', false);
+    toast('已上传'); views.photos();
+  };
+};
+window.delPhoto = async (id) => {
+  if (!confirm('确定删除该照片？文件将一并删除。')) return;
+  await api('/api/admin/photos/' + id, { method: 'DELETE' });
+  toast('已删除'); views.photos();
+};
+
+// ============ 年代说明 ============
+views.eras = async () => {
+  const eras = await api('/api/admin/eras');
+  $('#view').innerHTML = `
+    <h2 style="color:var(--brand-dark)">⏳ 年代说明管理</h2>
+    <p class="meta">年代说明会在前台时间线中作为"时代背景"自动插入，帮助读者理解迁徙故事的历史环境。</p>
+    <div class="inline-form">
+      <h3 style="color:var(--brand-dark)" id="e-form-title">新增年代</h3>
+      <input type="hidden" id="e-id">
+      <div class="form-row">
+        <div><label>年代标题 *</label><input id="e-title" placeholder="如：三年困难时期"></div>
+        <div><label>排序号</label><input type="number" id="e-sort" value="0"></div>
+      </div>
+      <div class="form-row">
+        <div><label>起始年份</label><input type="number" id="e-ystart" placeholder="如 1959"></div>
+        <div><label>结束年份</label><input type="number" id="e-yend" placeholder="如 1961"></div>
+      </div>
+      <label>年代说明</label><textarea id="e-desc" style="min-height:4em"></textarea>
+      <p style="margin-top:.6rem"><button class="btn" id="e-save">保存</button>
+      <button class="btn gray" id="e-cancel" style="display:none">取消编辑</button></p>
+    </div>
+    <table class="admin-table"><thead><tr><th>标题</th><th>年份范围</th><th>说明</th><th>操作</th></tr></thead>
+    <tbody>${eras.map(e => `<tr>
+      <td><b>${esc(e.title)}</b></td><td>${e.year_start || '—'} — ${e.year_end || '—'}</td>
+      <td>${esc((e.description || '').slice(0, 70))}</td>
+      <td class="ops"><button class="btn ghost" style="padding:.15rem .6rem" onclick='editEra(${J(e)})'>编辑</button>
+      <button class="btn gray" style="padding:.15rem .6rem" onclick="delEra(${e.id})">删除</button></td>
+    </tr>`).join('')}</tbody></table>`;
+  $('#e-save').onclick = saveEra;
+  $('#e-cancel').onclick = () => views.eras();
+};
+window.editEra = (e) => {
+  $('#e-id').value = e.id; $('#e-title').value = e.title; $('#e-sort').value = e.sort || 0;
+  $('#e-ystart').value = e.year_start ?? ''; $('#e-yend').value = e.year_end ?? '';
+  $('#e-desc').value = e.description || '';
+  $('#e-cancel').style.display = ''; $('#e-form-title').textContent = '编辑年代 #' + e.id;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+window.delEra = async (id) => {
+  if (!confirm('确定删除该年代说明？')) return;
+  await api('/api/admin/eras/' + id, { method: 'DELETE' });
+  toast('已删除'); views.eras();
+};
+async function saveEra() {
+  const id = $('#e-id').value;
+  const body = {
+    title: $('#e-title').value, sort: Number($('#e-sort').value) || 0,
+    year_start: $('#e-ystart').value ? Number($('#e-ystart').value) : null,
+    year_end: $('#e-yend').value ? Number($('#e-yend').value) : null,
+    description: $('#e-desc').value
+  };
+  if (!body.title.trim()) return toast('请填写年代标题', false);
+  if (id) await api('/api/admin/eras/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  else await post('/api/admin/eras', body);
+  toast('已保存'); views.eras();
+}
+
+// ============ 亲属提交审核 ============
+views.submissions = async () => {
+  const subs = await api('/api/admin/submissions');
+  const typeName = { story: '📖 故事/回忆', photo: '🏠 老照片', correction: '✏️ 纠错补充' };
+  const statusName = { pending: '<span class="tag private">待审核</span>', approved: '<span class="tag era">已收录</span>', rejected: '<span class="tag">已退回</span>' };
+  $('#view').innerHTML = `
+    <h2 style="color:var(--brand-dark)">📥 亲属提交审核</h2>
+    ${subs.length ? subs.map(s => `
+      <div class="card" style="${s.status === 'pending' ? 'border-left:5px solid var(--danger)' : 'opacity:.85'}">
+        <p>${typeName[s.type] || s.type} ${statusName[s.status]}
+          <span class="meta">提交人：<b>${esc(s.submitter_name)}</b>${s.contact ? ' · 联系：' + esc(s.contact) : ''} · ${esc(s.created_at)}</span></p>
+        <h3 style="margin-top:.3rem">${esc(s.title || '（无标题）')}</h3>
+        <p class="meta">所属家族：${esc(s.family_name || '未指定')}${s.person_name ? ' · 相关人物：' + esc(s.person_name) : ''}</p>
+        ${s.content ? `<p style="margin-top:.4rem;white-space:pre-wrap">${esc(s.content)}</p>` : ''}
+        ${s.photo_file ? `<p style="margin-top:.5rem"><img src="/uploads/${s.photo_file}" style="max-width:280px;border:1px solid var(--line);border-radius:8px;cursor:zoom-in" onclick="showPhoto('/uploads/${s.photo_file}','')"><br><span class="meta">${esc(s.photo_caption || '')}</span></p>` : ''}
+        ${s.admin_note ? `<p class="meta" style="margin-top:.3rem">管理员备注：${esc(s.admin_note)}</p>` : ''}
+        ${s.status === 'pending' ? `<p style="margin-top:.6rem">
+          <button class="btn green" onclick="approveSub(${s.id})">✓ 审核通过并收录</button>
+          <button class="btn gray" onclick="rejectSub(${s.id})">✗ 退回</button>
+        </p>` : ''}
+      </div>`).join('') : '<p class="meta">暂无亲属提交。</p>'}`;
+};
+window.approveSub = async (id) => {
+  if (!confirm('审核通过后，内容将自动收录为正式故事/照片并公开显示。确定？')) return;
+  await post(`/api/admin/submissions/${id}/approve`, {});
+  toast('已收录'); views.submissions(); refreshBadge();
+};
+window.rejectSub = async (id) => {
+  const note = prompt('退回原因（可选，提交人不可见，仅作记录）：') || '';
+  await post(`/api/admin/submissions/${id}/reject`, { note });
+  toast('已退回'); views.submissions(); refreshBadge();
+};
+async function refreshBadge() {
+  try {
+    const me = await api('/api/admin/me');
+    $('#pending-badge').style.display = me.pending ? '' : 'none';
+    $('#pending-badge').textContent = me.pending;
+  } catch (e) {}
+}
+
+// ============ 修改密码 ============
+views.password = () => {
+  $('#view').innerHTML = `
+    <h2 style="color:var(--brand-dark)">🔑 修改密码</h2>
+    <div class="panel" style="max-width:460px">
+      <label>原密码</label><input type="password" id="pw-old">
+      <label>新密码（至少6位）</label><input type="password" id="pw-new">
+      <label>确认新密码</label><input type="password" id="pw-new2">
+      <div id="pw-msg"></div>
+      <p style="margin-top:.8rem"><button class="btn" id="pw-save">修改密码</button></p>
+    </div>`;
+  $('#pw-save').onclick = async () => {
+    if ($('#pw-new').value !== $('#pw-new2').value)
+      return $('#pw-msg').innerHTML = '<div class="notice err">两次输入的新密码不一致</div>';
+    try {
+      await post('/api/admin/password', { old_password: $('#pw-old').value, new_password: $('#pw-new').value });
+      $('#pw-msg').innerHTML = '<div class="notice ok">密码已修改，下次登录请使用新密码。</div>';
+    } catch (e) { $('#pw-msg').innerHTML = `<div class="notice err">${esc(e.message)}</div>`; }
+  };
+};
+
+checkLogin();
+</script>
+</body>
+</html>
